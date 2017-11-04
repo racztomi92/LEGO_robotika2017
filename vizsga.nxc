@@ -1,0 +1,301 @@
+#define LABSZ  4     //labirintus szelenek a szine
+#define LABV   3     //labirintus vegenek a szine
+#define PSZ   5      //kovetendo palya szine
+                     //szinek: kek 2,zold 3, piros 5, fekete 1, sarga 4
+#define dT 1
+#define P 10
+#define I 1
+#define D 1
+
+int irany=40;        //palyakovetesnel a motorok kulonbsege
+
+int sem_parkol=0;
+int sem_egyenes=1;
+int sem_dobozig=0;
+int sem_szinek=0;
+int sem_labirintus=1;
+int sem_tavolsag=0;
+
+
+int global=0;
+int global2=0;
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------
+ task doboz_kov()
+ {
+ 
+  until(sem_dobozig);
+ 
+  int integral = 0;
+  int lastError = 0;
+  int setpoint = 40;
+
+  SetSensorLowspeed(IN_3);
+
+  while(1) {
+    int input = SensorUS(IN_3);
+    int error = 0;
+    int deriv = 0;
+    int output = 0;
+
+
+    // Ezen a tartományon még megbízhatóan mûködik
+    if (input > 200) {
+      input = 200;
+    }
+    
+    error = setpoint - input;
+    integral = integral + (error * dT);
+
+    // Integráló tag limitálása
+    if (integral > 5) {
+      integral = 5;
+    } else if(integral < -5) {
+      integral = -5;
+    }
+
+    deriv = (error - lastError) / dT;
+    lastError = error;
+
+    output = P * error + I * integral + D * deriv;
+
+    // Beavatkozójel korlátozása
+    if (output > 100) {
+      output = 100;
+    } else if (output < -100) {
+      output = -100;
+    }
+
+    OnFwdSync(OUT_AC, (-1 * output), 0);
+    NumOut(0, LCD_LINE1, input, TRUE);
+    Wait(20);
+  }
+
+  Off(OUT_AC);
+
+
+ }
+ //-------------------------------------------------------------------------------------------------------------------------------------------------
+ task tavolsag()
+ {
+    SetSensorLowspeed(IN_3);
+
+ 
+  until(sem_tavolsag==1);
+  while(1)
+  {
+
+   until(SensorUS(IN_3)<25&&global2||sem_tavolsag==0);
+   if(SensorUS(IN_3)<25&&global2)
+   {
+    global=1;
+    }
+   else
+   {
+    until(sem_tavolsag==1);
+   }
+  }
+  
+ }
+ 
+ 
+ //-------------------------------------------------------------------------------------------------------------------------------------------------
+
+ task dobozig()
+ {
+     SetSensorLowspeed(IN_3);
+
+     until(sem_dobozig==1);
+
+     until(SensorUS(IN_3)>40);
+     sem_egyenes=0;
+     ExitTo(doboz_kov);
+
+ }
+//-------------------------------------------------------------------------------------------------------------------------------------------------
+task parkol()
+{
+     int felt=1;
+     
+     SetSensorLowspeed(IN_1);
+     SetSensorColorFull(IN_2);
+     SetSensorTouch(IN_4);
+
+     until(sem_parkol==1);
+
+     sem_tavolsag=1;
+
+     while(felt==1)
+     {
+         global2=0;
+         until(SensorUS(IN_1)>35&&SensorUS(IN_1)<43)
+         {
+           NumOut(1,1,SensorUS(IN_1),false);
+         }
+         global2=1;
+         ResetTachoCount(OUT_A);
+
+         until(MotorTachoCount(OUT_A)>330||global);  //ha az egyik motor legalabb 330-at fordul akkor már beférünk
+
+           if(MotorTachoCount(OUT_A)>330)
+               felt=0;
+           else
+               continue;
+
+
+     }
+     sem_tavolsag=0;
+
+     Wait(1000);
+     sem_egyenes=0;
+     Off(OUT_AC);
+     
+     ResetTachoCount(OUT_AC);
+     RotateMotor(OUT_A,40,250);
+     RotateMotor(OUT_C,40,-250);
+     
+     OnRevSync(OUT_AC,40,-3);
+     until(Sensor(IN_4));    //addig hatralunk amig a touchsensor be nem nyomodik
+     Off(OUT_AC);
+     
+     Wait(2000);
+     
+     OnFwdSync(OUT_AC,40,2);
+     until(Sensor(IN_2)==PSZ);
+     Wait(800);
+     Off(OUT_AC);
+
+     
+     OnFwdSync(OUT_AC,30,85);
+     until(Sensor(IN_2)==PSZ);
+     OnRevSync(OUT_AC,40,0);
+     Wait(200);
+     Off(OUT_AC);
+
+     sem_egyenes=1;
+     sem_dobozig=1;
+
+}
+//-------------------------------------------------------------------------------------------------------------------------------------------------
+task egyenes()
+{
+ SetSensorColorFull(IN_2);
+ OnFwdSync(OUT_AC,30,0);
+ Wait(1000);
+ OnFwdSync(OUT_AC,40,100);
+ until(Sensor(IN_2)==PSZ);
+ OnRevSync(OUT_AC,40,0);
+ Wait(200);
+ Off(OUT_AC);
+ sem_parkol=1;
+  while(1)
+  {
+   OnFwdSync(OUT_AC,40,6);
+   until(Sensor(IN_2)==PSZ||sem_egyenes==0);
+   if(Sensor(IN_2)==PSZ)
+   {
+    OnFwdSync(OUT_AC,40,-50);
+    Wait(70);
+    }
+   else
+   {
+    until(sem_egyenes==1);
+   }
+  }
+}
+
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------
+task labirintus()
+{
+   sem_szinek=1;
+
+   SetSensorColorFull(IN_2);
+   OnFwdSync(OUT_AC,40,2);
+   Wait(450);
+     while(1)
+  {
+   OnFwdSync(OUT_AC,50,-19);
+   until(Sensor(IN_2)==LABSZ||sem_labirintus==0);
+   if(sem_labirintus==0)
+    until(sem_labirintus==1);
+    
+   while(Sensor(IN_2)==LABSZ)
+   {
+     OnRevSync(OUT_AC,40,25);
+     Wait(350);
+    }
+    OnFwdSync(OUT_AC,40,100);
+    Wait(550);
+
+   
+  }
+
+
+}
+ //-------------------------------------------------------------------------------------------------------------------------------------------------
+task szinek()
+{
+ SetSensorColorFull(IN_2);
+
+ until(sem_szinek==1);
+ until(Sensor(IN_2)==LABV);
+ sem_labirintus=0;
+ ExitTo(egyenes);
+}
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------
+
+task   palyakovetes()
+{
+
+
+ SetSensorColorFull(IN_2);
+ while(1)
+ {
+
+  OnFwdSync(OUT_AC,40,irany);
+  until(Sensor(IN_2)==PSZ||Sensor(IN_2)==LABSZ);
+  if(Sensor(IN_2)==PSZ)
+  {
+   NumOut(1,1,Sensor(IN_2),false);
+   OnFwdSync(OUT_AC,40,-irany);
+   Wait(1000);
+   }
+   
+   
+  else
+  {
+   ExitTo(labirintus);
+  }
+ }
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------
+
+task main()
+{
+ SetSensorTouch(IN_4);
+
+ while(Sensor(IN_4)!=1);
+
+ Precedes( palyakovetes,parkol,szinek,egyenes,dobozig,tavolsag);
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
